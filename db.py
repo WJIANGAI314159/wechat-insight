@@ -3,6 +3,7 @@
 """
 微信公众号深度研究工具 - 数据库模块
 使用 SQLite 存储历史报告，同时作为搜索缓存
+支持按方向（direction）区分缓存
 """
 
 import os
@@ -11,10 +12,10 @@ import json
 import time
 from datetime import datetime
 
-# 数据库文件路径：本地用 insight.db，Render 上用 /var/data/insight.db 或环境变量指定
+# 数据库文件路径
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "insight.db"))
 
-# 缓存有效期（秒）：相同关键词+时间范围在此时长内直接返回缓存
+# 缓存有效期（秒）：相同关键词+时间范围+方向在此时长内直接返回缓存
 CACHE_TTL = 6 * 3600  # 6小时
 
 
@@ -33,6 +34,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             query TEXT NOT NULL,
             days INTEGER NOT NULL,
+            direction TEXT DEFAULT 'general',
             total_results INTEGER DEFAULT 0,
             sentiment_hint TEXT,
             summary TEXT,
@@ -41,9 +43,16 @@ def init_db():
             data_json TEXT NOT NULL
         )
     """)
+    # 如果旧表没有 direction 列，自动添加
+    try:
+        conn.execute("SELECT direction FROM reports LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE reports ADD COLUMN direction TEXT DEFAULT 'general'")
+        conn.commit()
+
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_reports_query
-        ON reports(query, days, created_ts)
+        ON reports(query, days, direction, created_ts)
     """)
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_reports_created
@@ -54,12 +63,14 @@ def init_db():
 
 
 def save_report(query: str, days: int, total_results: int,
-                articles: list, analysis: dict) -> int:
+                articles: list, analysis: dict,
+                direction: str = "general") -> int:
     """保存一份搜索报告，返回报告 ID"""
     now = datetime.now()
     data = {
         "query": query,
         "days": days,
+        "direction": direction,
         "total_results": total_results,
         "articles": articles,
         "analysis": analysis,
@@ -68,11 +79,12 @@ def save_report(query: str, days: int, total_results: int,
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO reports
-           (query, days, total_results, sentiment_hint, summary, created_at, created_ts, data_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           (query, days, direction, total_results, sentiment_hint, summary, created_at, created_ts, data_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             query,
             days,
+            direction,
             total_results,
             analysis.get("sentiment_hint", ""),
             analysis.get("summary", ""),
@@ -87,18 +99,17 @@ def save_report(query: str, days: int, total_results: int,
     return report_id
 
 
-def get_cached_report(query: str, days: int) -> dict | None:
+def get_cached_report(query: str, days: int, direction: str = "general") -> dict | None:
     """
-    查找缓存：相同关键词 + 相同时间范围 + 在 CACHE_TTL 内
-    如果找到返回完整数据 dict，否则返回 None
+    查找缓存：相同关键词 + 相同时间范围 + 相同方向 + 在 CACHE_TTL 内
     """
     cutoff = time.time() - CACHE_TTL
     conn = get_conn()
     row = conn.execute(
         """SELECT data_json, id FROM reports
-           WHERE query = ? AND days = ? AND created_ts > ?
+           WHERE query = ? AND days = ? AND direction = ? AND created_ts > ?
            ORDER BY created_ts DESC LIMIT 1""",
-        (query, days, cutoff),
+        (query, days, direction, cutoff),
     ).fetchone()
     conn.close()
     if row:
@@ -113,7 +124,7 @@ def get_all_reports(limit: int = 50) -> list:
     """获取所有历史报告列表（摘要信息）"""
     conn = get_conn()
     rows = conn.execute(
-        """SELECT id, query, days, total_results, sentiment_hint,
+        """SELECT id, query, days, direction, total_results, sentiment_hint,
                   summary, created_at, created_ts
            FROM reports
            ORDER BY created_ts DESC
