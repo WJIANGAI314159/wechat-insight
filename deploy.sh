@@ -58,7 +58,7 @@ echo "[5/7] 安装 Python 依赖..."
 echo "[6/7] 配置进程守护（Supervisor）..."
 cat > /etc/supervisor/conf.d/wechat-insight.conf << EOF
 [program:wechat-insight]
-command=$APP_DIR/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
+command=$APP_DIR/venv/bin/gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 600
 directory=$APP_DIR
 autostart=true
 autorestart=true
@@ -97,4 +97,9 @@ echo "    重启: supervisorctl restart wechat-insight"
 echo "    停止: supervisorctl stop wechat-insight"
 echo "    状态: supervisorctl status"
 echo "    日志: tail -f /var/log/wechat-insight.out.log"
+echo "    更新: cd $APP_DIR && git pull && supervisorctl restart wechat-insight"
+echo ""
+echo "  代理配置（可选，降低反爬风险）："
+echo "    编辑 $APP_DIR/proxies.txt，每行一个代理地址"
+echo "    或设置环境变量 PROXY_LIST=http://ip:port,http://ip2:port"
 echo ""
