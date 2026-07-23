@@ -147,13 +147,13 @@ body {
 .search-input:focus { border-color: var(--primary); }
 .search-input::placeholder { color: var(--text-light); }
 .time-select {
-  padding: 12px 12px;
+  padding: 12px 8px;
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 14px;
   background: white;
   outline: none;
-  min-width: 100px;
+  min-width: 90px;
 }
 .search-btn {
   padding: 12px 28px;
@@ -583,6 +583,11 @@ body {
       <option value="90">近90天</option>
       <option value="365">近一年</option>
     </select>
+    <select class="time-select" id="directionSelect">
+      <option value="general" selected>一般生活</option>
+      <option value="ecommerce">跨境电商</option>
+      <option value="macro">宏观交易</option>
+    </select>
     <button class="search-btn" id="searchBtn" onclick="doSearch()">
       深度研究
     </button>
@@ -606,19 +611,20 @@ async function doSearch() {
   if (!query) { alert('请输入关键词'); return; }
 
   const days = document.getElementById('timeSelect').value;
+  const direction = document.getElementById('directionSelect').value;
   const btn = document.getElementById('searchBtn');
   const content = document.getElementById('mainContent');
 
   btn.classList.add('loading');
   btn.textContent = '正在研究';
-  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">正在搜索公众号文章并深度分析中...<br>预计需要1-3分钟，请耐心等待</div></div>';
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">\u23F3</div><div class="empty-text">\u6b63\u5728\u641c\u7d22\u516c\u4f17\u53f7\u6587\u7ae0\u5e76\u6df1\u5ea6\u5206\u6790\u4e2d...<br>\u9884\u8ba1\u9700\u89813-8\u5206\u949f\uff0810\u9875\u641c\u7d22+20\u7bc7\u5168\u6587\u6293\u53d6\uff09\uff0c\u8bf7\u8010\u5fc3\u7b49\u5f85</div></div>';
 
   try {
     // 1. 发起搜索任务
     const startRes = await fetch('/api/search', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({q: query, days: parseInt(days)})
+      body: JSON.stringify({q: query, days: parseInt(days), direction: direction})
     });
     const startData = await startRes.json();
 
@@ -679,9 +685,15 @@ function renderReport(data) {
 
   // Cache badge
   if (data.cached) {
-    html += `<div class="cache-badge">⚡ 来自缓存（报告 #${data.report_id}）</div>`;
+    html += `<div class="cache-badge">\u26a1 来自缓存（报告 #${data.report_id}）</div>`;
   } else if (data.report_id) {
-    html += `<div class="cache-badge">💾 已保存（报告 #${data.report_id}）</div>`;
+    html += `<div class="cache-badge">\ud83d\udcbe 已保存（报告 #${data.report_id}）</div>`;
+  }
+
+  // Direction badge
+  const dirLabel = data.analysis?.direction_label || data.direction_label || '';
+  if (dirLabel) {
+    html += `<div class="cache-badge" style="background:rgba(33,150,243,0.1);color:#1976d2">\ud83c\udff7\ufe0f ${dirLabel}</div>`;
   }
 
   // Back button if viewing from history
@@ -737,6 +749,19 @@ function renderReport(data) {
     analysis.keyword_cloud.forEach((kw, i) => {
       const cls = i < 3 ? 'hot' : '';
       html += `<span class="kw-tag ${cls}">${kw.word}</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Direction Focus Keywords
+  if (analysis.focus_keywords_hit && analysis.focus_keywords_hit.length > 0) {
+    html += `
+    <div class="report-card fade-in" style="animation-delay:0.45s">
+      <div class="card-header"><div class="card-icon">\ud83c\udfaf</div>${analysis.direction_label || ''}\u65b9\u5411\u4fe1\u53f7\u8bcd</div>
+      <div class="kw-cloud">`;
+    analysis.focus_keywords_hit.forEach((kw, i) => {
+      const cls = i < 3 ? 'hot' : '';
+      html += `<span class="kw-tag ${cls}">${kw.word} <span style="font-size:11px;opacity:0.7">(${kw.count})</span></span>`;
     });
     html += `</div></div>`;
   }
@@ -820,19 +845,21 @@ async function showHistory() {
                 <div class="history-list">`;
 
     reports.forEach(r => {
+      const dirMap = {'general':'一般生活','ecommerce':'跨境电商','macro':'宏观交易'};
+      const dirLabel = dirMap[r.direction] || '一般生活';
       html += `
       <div class="history-item" onclick="loadReport(${r.id})">
         <div class="history-info">
-          <div class="history-query">🔍 ${r.query}</div>
+          <div class="history-query">\ud83d\udd0d ${r.query} <span style="font-size:12px;color:#1976d2;background:rgba(33,150,243,0.1);padding:2px 8px;border-radius:12px;margin-left:8px">${dirLabel}</span></div>
           <div class="history-meta">
-            <span>📊 ${r.total_results} 篇文章</span>
-            <span>📅 ${r.created_at}</span>
-            <span>⏱ 近${r.days}天</span>
-            <span>📈 ${r.sentiment_hint}</span>
+            <span>\ud83d\udcca ${r.total_results} 篇文章</span>
+            <span>\ud83d\udcc5 ${r.created_at}</span>
+            <span>\u23f1 近${r.days}天</span>
+            <span>\ud83d\udcc8 ${r.sentiment_hint}</span>
           </div>
           <div class="history-summary">${r.summary || ''}</div>
         </div>
-        <button class="history-delete" onclick="deleteReport(event, ${r.id})">🗑</button>
+        <button class="history-delete" onclick="deleteReport(event, ${r.id})">\ud83d\uddd1</button>
       </div>`;
     });
 
@@ -902,13 +929,14 @@ def clean_text_for_json(text: str) -> str:
 
 # ========== 异步搜索 Worker ==========
 
-def _do_search_worker(job_id: str, query: str, days: int):
+def _do_search_worker(job_id: str, query: str, days: int, direction: str = "general"):
     """在后台线程中执行搜索任务"""
     try:
         with _jobs_lock:
-            _jobs[job_id]["message"] = "正在搜索公众号文章..."
+            _jobs[job_id]["message"] = "正在搜索公众号文章（10页深度搜索）..."
 
-        result = deep_search(query, days=days, fetch_content=True, content_limit=3)
+        result = deep_search(query, days=days, fetch_content=True,
+                             content_limit=20, direction=direction, max_pages=10)
 
         if result["error"]:
             with _jobs_lock:
@@ -926,10 +954,10 @@ def _do_search_worker(job_id: str, query: str, days: int):
                 a["full_content"] = clean_text_for_json(a["full_content"])
 
         with _jobs_lock:
-            _jobs[job_id]["message"] = "正在分析内容并生成报告..."
+            _jobs[job_id]["message"] = f"已搜索到 {len(articles)} 篇文章，正在抓取全文并分析..."
 
-        # 分析结果
-        analysis = analyze_articles(articles, query)
+        # 分析结果（传入方向）
+        analysis = analyze_articles(articles, query, direction=direction)
 
         # 清理分析结果中的HTML实体
         analysis["summary"] = clean_text_for_json(analysis.get("summary", ""))
@@ -941,7 +969,7 @@ def _do_search_worker(job_id: str, query: str, days: int):
             a["digest"] = clean_text_for_json(a.get("digest", ""))
 
         # 保存到数据库
-        report_id = db.save_report(query, days, result["total_results"], articles, analysis)
+        report_id = db.save_report(query, days, result["total_results"], articles, analysis, direction=direction)
 
         # 标记任务完成
         with _jobs_lock:
@@ -949,6 +977,7 @@ def _do_search_worker(job_id: str, query: str, days: int):
             _jobs[job_id]["result"] = {
                 "query": query,
                 "days": days,
+                "direction": direction,
                 "total_results": result["total_results"],
                 "articles": articles,
                 "analysis": analysis,
@@ -975,12 +1004,16 @@ def api_search():
     data = request.get_json(silent=True) or {}
     query = (data.get('q') or '').strip()
     days = int(data.get('days', 30))
+    direction = data.get('direction', 'general')
+    # 校验方向
+    if direction not in ('general', 'ecommerce', 'macro'):
+        direction = 'general'
 
     if not query:
         return jsonify({"error": "请提供搜索关键词"})
 
-    # 1. 先查缓存
-    cached = db.get_cached_report(query, days)
+    # 1. 先查缓存（按方向区分）
+    cached = db.get_cached_report(query, days, direction=direction)
     if cached:
         cached["status"] = "done"
         return jsonify(cached)
@@ -993,12 +1026,13 @@ def api_search():
             "message": "正在启动搜索...",
             "query": query,
             "days": days,
+            "direction": direction,
             "created_at": time.time(),
             "result": None,
             "error": None,
         }
 
-    thread = threading.Thread(target=_do_search_worker, args=(job_id, query, days), daemon=True)
+    thread = threading.Thread(target=_do_search_worker, args=(job_id, query, days, direction), daemon=True)
     thread.start()
 
     return jsonify({"job_id": job_id, "status": "running"})
